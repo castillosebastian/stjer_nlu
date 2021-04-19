@@ -1,0 +1,13 @@
+# Libraries
+bs4 
+nltk
+pandas
+io
+requests
+google.colab import drive
+numpy 
+json
+stanza
+scipy
+google.colab
+matplotlib
