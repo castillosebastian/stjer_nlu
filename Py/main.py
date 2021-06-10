@@ -19,8 +19,13 @@ import scipy
 import matplotlib
 import os
 import sklearn
+import psycopg2
 
-
+params = config()
+# connect to the PostgreSQL server
+connection = psycopg2.connect(**params)
+# create a cursor
+cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 
