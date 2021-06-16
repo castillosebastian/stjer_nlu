@@ -1,0 +1,517 @@
+---
+header-includes:
+- \usepackage{pdflscape}
+- \newcommand{\blandscape}{\begin{landscape}}
+- \newcommand{\elandscape}{\end{landscape}}
+- \pagenumbering{gobble}
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+geometry: margin=1cm
+params:
+  circunscripcion:
+    label: "Circunscripción (separar con coma sin espacio o 'Todas')"
+    input: text
+    value: "Todas"
+  fuero:
+    label: "super-Fuero: NoPenal, Penal"
+    input: text
+    value: "NoPenal"
+  instancia:
+    label: "Instancia: 1, 2 o 3"
+    input: text
+    value: "1"
+  start_date: 
+    label: "Fecha_inicio_inf"
+    input: text
+    value: "2018-02-01"
+  end_date:
+    label: "Fecha_fin_inf"
+    input: text
+    value: "2021-01-01"
+  Intervalo:
+    label: 'intervalo: subdiario, diario, semanal, mensual, cuatrimestral, anual'
+    input: text
+    value: "mensual"
+  Agrupador:
+    label: 'agrupador: organismo, circunscripcion, materia'
+    input: text
+    value: "organismo"  
+  CausasIniciadas: FALSE 
+  Resoluciones: FALSE
+  Movimientos: FALSE
+  Audiencias: FALSE
+  ResolucionesxTipo: FALSE
+  Presentaciones_Providencias: FALSE
+  Geom:
+    label: "Parametros Gráficos: lineas, puntos, barras_stack, barras_fill, area"
+    input: text
+    value: "barras_stack"
+  Etiquetas: FALSE
+  Estadistico_SMA: FALSE
+---
+```{r setup, include=FALSE}
+source("~/apgyeinformes/R/informe.R")
+source("~/apgyeinformes/R/poblacion.R")
+# source("../R/macro_interanual.R")
+```
+
+```{r parametros, echo=FALSE, include=FALSE}
+#-------------------------PARAMETROS:
+# ------------------------parámetros de poblacion---------------------------
+if (params$circunscripcion == "Todas"){
+  circ <- NA
+} else {
+  circ <- unlist(str_split(params$circunscripcion, ","))
+}
+fuero <- unlist(str_split(params$fuero, ",")) 
+instancia <- unlist(str_split(params$instancia, ","))
+instancia1 <- "1" %in% instancia
+instancia2 <- "2" %in% instancia 
+instancia3 <- "3" %in% instancia
+#-------------------------parametros temporales---------------------------
+start_date <- params$start_date
+end_date <- params$end_date
+#------------------------- indicadores ------------------------------------
+iniciadas <- params$CausasIniciadas
+resoluciones <- params$Resoluciones
+movimientos <- params$Movimientos
+resolucionesxt <- params$ResolucionesxTipo
+audiencias <- params$Audiencias
+#------------------------- parametros graficos-----------------------------
+etiquetas <- params$Etiquetas
+intervalo <- params$Intervalo
+tendencia <- params$Tendencia
+geom <- params$Geom
+sma <- params$Estadistico_SMA
+agrupador <- params$Agrupador
+
+```
+
+```{r, tools, echo=FALSE, include=FALSE}
+serietemp <- function(df, agrupador = agrupador, vartiempo, intervalo = intervalo, geom = c("puntos", "lineas", "barras_stack", "barras_fill", "area"), etiquetas = F, sma = F, titulo = NULL) {
+  
+  result <- list()
+
+  df <- df %>% 
+    ungroup() %>% 
+    filter(!is.na({{vartiempo}})) %>% 
+    mutate(dia = lubridate::wday({{vartiempo}}, label = TRUE),
+           finde = (dia %in% c("dom", "sáb"))) %>% 
+    mutate(diario = ymd({{vartiempo}})) %>% 
+    mutate(cuatrimestral = tsibble::yearquarter({{vartiempo}})) %>% 
+    mutate(mensual = tsibble::yearmonth({{vartiempo}})) %>% 
+    mutate(semanal = tsibble::yearweek({{vartiempo}})) %>% 
+    mutate(subdiario = as_datetime({{vartiempo}})) %>% 
+    mutate(anual = ymd(str_c(year({{vartiempo}}), "-01-01"))) 
+  
+  
+  df <- df %>% 
+    group_by(!!rlang::sym(agrupador), !! rlang::sym(intervalo)) %>%
+    summarise(cantidad = n()) 
+  
+  df <-  tsibble::as_tsibble(df, key = !!rlang::sym(agrupador), index = !! rlang::sym(intervalo)) 
+  
+  df <- df %>% tsibble::fill_gaps() 
+  
+  result$df_ts <- df
+  
+  
+  # Graficacion
+  g <- df %>% 
+    ggplot(aes(x = !! rlang::sym(intervalo), y = cantidad, fill = !!rlang::sym(agrupador)))
+  
+  if(geom == "puntos") {
+    g <- g + geom_point(aes(color = !!rlang::sym(agrupador))) +  scale_colour_viridis_d()
+    if(etiquetas) {
+      g <- g +  geom_text(aes(label = cantidad, alpha = 1), vjust = -0.5, hjust= 0.5, show.legend = FALSE) 
+    }
+  } else if(geom == "lineas"){
+    g <- g + geom_line(aes(color = !!rlang::sym(agrupador))) +  scale_colour_viridis_d()
+    if(etiquetas) {
+      g <- g +  geom_text(aes(label = cantidad, alpha = 1), vjust = -0.5, hjust= 0.5, show.legend = FALSE) 
+    }
+  } else if (geom == "barras_stack") {
+    g <- g +  geom_bar(stat="identity") + scale_fill_viridis_d()  # en gemo_bar: position="fill" muestra porcentaje!
+    if(etiquetas) {
+      g <- g +  geom_text(aes(label = cantidad, alpha = 1), position = position_stack(vjust = 0.5), show.legend = FALSE) 
+    }
+  } else if (geom == "barras_fill") {
+    g <- g +  geom_bar(stat="identity", position = "fill") + scale_fill_viridis_d()  # en gemo_bar: position="fill" muestra porcentaje!
+    if(etiquetas) {
+      g <- g +  geom_text(aes(label = cantidad, alpha = 1), position = position_stack(vjust = 0.5), show.legend = FALSE) 
+    }
+  } else if (geom == "area") {
+    g <- g +  geom_area() + scale_fill_viridis_d()  # en position="fill" muestra porcentaje!
+    if(etiquetas) {
+      g <- g +  geom_text(aes(label = cantidad, alpha = 1), position = position_stack(vjust = 0.5), show.legend = FALSE) 
+    }
+  }
+  
+  if(sma) {
+    g <- g + stat_smooth(color = "#FC4E07", fill = "#FC4E07", method = "loess")
+  } else {
+    g
+  }
+  
+  
+  if("diario" %in% colnames(df)){
+    
+    g <- g + scale_x_date(date_breaks = "7 day", date_labels = "%Y-%m-%d")  
+    
+  } else if("semanal" %in% colnames(df)){
+    
+    g <- g + tsibble::scale_x_yearweek(date_breaks = "4 week", date_labels = "%Y-%m-%d" )
+    
+  } else if("mensual" %in% colnames(df)){
+    
+    g <- g + tsibble::scale_x_yearmonth(date_breaks = "1 month", date_labels = "%Y-%m" )
+    
+  } else if("cuatrimestral" %in% colnames(df)){
+    
+    g <- g + tsibble::scale_x_yearquarter(date_labels = "%Y-%m")
+    
+  } else if("anual" %in% colnames(df)){
+    
+    g <- g + scale_x_date(date_breaks = "1 year", date_labels = "%Y")
+    
+  } else {
+    
+    g <- g + tsibble::scale_x_yearmonth(date_breaks = "1 month", date_labels = "%Y-%m" )
+    
+  }
+  
+  g <- g +
+    theme_economist() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.2), 
+          legend.title = element_blank(), 
+          axis.title.y=element_blank(), legend.text = element_text(size=14),
+          strip.text = element_text(size=12), plot.title = element_text(size=14), 
+          plot.subtitle = element_text(size=12), 
+          plot.caption = element_text(size=9, color = "darkgrey", hjust = 1)) +
+    labs(title = titulo, caption = "APGE-STJER/apge@jusentrerios.gov.ar")
+  
+  result$grafico <- g
+  
+  result
+  
+}
+
+inic_nop <- function(start_date, end_date) {
+  
+  inicxmes <- function(df, materia) {
+    
+    df %>% 
+      mutate(materia = materia, 
+             superfuero = 'Materias no penales')
+  }
+  
+  
+  #cco1--------
+  resultado <- iniciados_cco(db_con = DB_PROD(), poblacion = jdos_cco, start_date = start_date,
+                             end_date = end_date, estadistico = "conteo")
+  
+  iniciados <- resultado$inic_cco_pc %>% inicxmes(materia = "Civil-Comercial")
+  #fam---------
+  resultado <- iniciados_fam(db_con = DB_PROD(), poblacion = jdos_fam,start_date = start_date, end_date = end_date, 
+                             estadistico = "conteo") 
+  
+  inic_multif <- iniciados_multifuero_labfam(db_con = DB_PROD(), poblacion = jdos_cco,
+                                             start_date = start_date, end_date = end_date, estadistico = "conteo") 
+  
+  multifam <- inic_multif$inic_multi_famlab_pc %>% filter(fuero == "familia") %>% select(-fuero)
+  
+  pazfam <- iniciados_paz_fam(db_con = DB_PROD(), poblacion = jdos_paz, start_date = start_date, end_date = end_date,
+                              estadistico = "conteo") %>% .$inic_pazfam_pc
+  
+  resultado$inic_fam_pc <- resultado$inic_fam_pc %>% bind_rows(multifam) %>% bind_rows(pazfam)
+  
+  iniciados <- iniciados %>% bind_rows(resultado$inic_fam_pc %>% inicxmes(materia = "Familia"))
+  #ecq---------
+  resultado <- iniciados_ecq(db_con = DB_PROD(), poblacion = jdos_ecq, start_date = start_date, end_date = end_date,
+                             estadistico = "conteo")
+  iniciados <- iniciados %>% bind_rows( resultado$inic_ecq_pc %>% inicxmes(materia = "Quiebra_Ejecuciones"))
+  
+  
+  #lab-----------
+  resultado <- iniciados_lab(db_con = DB_PROD(), poblacion = jdos_lab, start_date = start_date, end_date = end_date,
+                             estadistico = "conteo")
+  
+  res_multif <- iniciados_multifuero_labfam(db_con = DB_PROD(), poblacion = jdos_cco,
+                                            start_date = start_date, end_date = end_date, estadistico = "conteo") 
+  
+  ccolabpc <- res_multif$inic_ccolab_pc %>% select(-fuero)
+  
+  multilab <- res_multif$inic_multi_famlab_pc %>% filter(fuero == "laboral") %>% select(-fuero)
+  
+  resultado$inic_lab_pc <- resultado$inic_lab_pc %>% bind_rows(ccolabpc) %>%  bind_rows(multilab)
+  
+  iniciados <- iniciados %>% bind_rows( resultado$inic_lab_pc %>% inicxmes(materia = "Laboral"))
+  
+  #paz1----------
+  resultado_proc <- apgyeProcesamiento::iniciados_paz_procxgpo(db_con = DB_PROD(), poblacion = jdos_paz,
+                                                               start_date = start_date, end_date = end_date, 
+                                                               estadistico = "conteo")
+  
+  iniciados <- iniciados %>% bind_rows( resultado_proc$inic_paz_pc %>% inicxmes(materia = "Paz 1°"))
+  
+  #paz23---------
+  resultado <- iniciados_paz_23c(poblacion = jdos_paz_23,
+                                 start_date = start_date,
+                                 end_date = end_date, estadistico = "conteo") 
+  
+  iniciados <- iniciados %>% bind_rows( resultado$inic_paz23_pc %>% rename(finicio = fecha) %>% 
+                                          inicxmes(materia = "Paz 2°-3°"))
+  
+  #resultados-------
+  
+  iniciados
+  
+}
+
+res_nop <- function(start_date, end_date, desagregacion_mensual = T) {
+  
+  res_prim <- function(db_con, poblacion, operacion = "CADR1C", start_date = "2018-07-01", end_date = "2018-09-02") {
+    
+    operacion = rlang::enexpr(operacion)
+      
+    resultado <- db_con %>%
+      apgyeTableData(!! operacion) %>%
+      apgyeDSL::interval(start_date, end_date) %>%
+      filter(iep %in% !!poblacion$organismo) %>%
+      resolverconvertidos() %>%
+      mutate(fres = dmy(fres)) %>%
+      collect() %>%
+      filter(!(is.na(nro) & is.na(caratula))) %>%  # exclusión de registros con información crítica faltante
+      filter(!is.na(fres)) %>%
+      filter(fres >= data_interval_start & fres < data_interval_end) %>%
+      filter(tres != "0") %>% 
+      left_join(apgyeJusEROrganization::listar_organismos()[, c("organismo", "organismo_descripcion",
+                                                              "circunscripcion")], by = c("iep" = "organismo")) %>%
+      select(circunscripcion, organismo = organismo_descripcion, everything())
+    
+    resultado
+    
+  }
+  
+  resxmes <- function(df, materia) {
+    
+    df %>% 
+      filter(circunscripcion != "Total") %>% 
+      rename(fecha_resolucion = fres) %>% 
+      select(circunscripcion, organismo, fecha_resolucion, as) %>% 
+      mutate(fecha_resolucion = ymd(fecha_resolucion)) %>% 
+      mutate(as = toupper(as)) %>% 
+      mutate(as = ifelse(str_detect(as, "S"), "Sentencias", "Autos")) %>% 
+      mutate(as = ifelse(is.na(as), "Autos", as)) %>% 
+      mutate(materia = materia, 
+              superfuero = 'Materias no penales')
+  }
+  
+  #cco1--------
+  resultado <- res_prim(db_con = DB_PROD(), 
+                                poblacion = jdos_cco,
+                                start_date = start_date,
+                                end_date = end_date)
+  
+  resueltos <- resultado %>% resxmes(materia = "Civil-Comercial")
+  #fam---------
+  resultado <- res_prim(db_con = DB_PROD(), poblacion = jdos_fam,
+                                start_date = start_date, end_date = end_date)
+  
+  resueltos <- resueltos %>% bind_rows(resultado %>% resxmes(materia = "Familia"))
+  
+  #ecq---------
+  resultado <- res_prim(db_con = DB_PROD(), poblacion = jdos_ecq,
+                                             start_date = start_date, end_date = end_date)
+  
+  resueltos <- resueltos %>% bind_rows( resultado %>% resxmes(materia = "Quiebra_Ejecuciones"))
+  #lab-----------
+  resultado <- res_prim(db_con = DB_PROD(), operacion = "CADR1L", poblacion = jdos_lab, 
+                                start_date = start_date, end_date = end_date)
+  
+  resueltos <- resueltos %>% bind_rows( resultado %>% resxmes(materia = "Laboral"))
+  
+  #paz1----------
+  resultado <-  res_prim(db_con = DB_PROD(), poblacion = jdos_paz, 
+                                                    start_date = start_date, end_date = end_date)
+  
+  resueltos <- resueltos %>% bind_rows( resultado %>% resxmes(materia = "Paz 1°"))
+  
+  #paz23---------
+  resultado <-  res_prim(db_con = DB_PROD(), poblacion = jdos_paz_23,
+                                                       start_date = start_date, end_date = end_date)
+  
+  resueltos <- resueltos %>% bind_rows( resultado %>% resxmes(materia = "Paz 2°-3°"))
+  
+  
+  resueltos
+}
+```
+
+<!-- PROCESAMIENTO ----------------------------------------------------------->
+
+```{r, movimientos_proc, eval = movimientos, message=FALSE, include=FALSE, warning=FALSE, echo=FALSE}
+# Consutla BD-------------------------------------------------------------------
+
+movimientos_db <- tbl(DB_PROD(), "movimientos") %>% 
+  filter(fecha_hora >= start_date, fecha_hora <= end_date) %>% 
+  collect()
+
+# Procesamiento-----------------------------------------------------------------
+ap_clean <- movimientos_db %>% 
+  mutate(fecha = as.Date(ymd_hms(fecha_hora))) %>% 
+  filter(fecha >= start_date, fecha < end_date) %>% 
+  distinct()
+
+resumen <- ap_clean %>% 
+  mutate(tipo_movimiento = case_when(
+    tipo_movimiento == "procesal" | is.na(tipo_movimiento) ~ "actos_procesales",
+    tipo_movimiento == "procesal_presentacion" ~"presentaciones_abogados")) %>% 
+  group_by(fecha, tipo_movimiento) %>% 
+  summarise(cantidad = n()) 
+
+n_actproc = resumen %>% ungroup() %>% 
+  filter(tipo_movimiento == "actos_procesales") %>% 
+  summarise(total = sum(cantidad)) %>% .$total
+
+n_actproc = format(n_actproc, big.mark = ".")
+
+n_presentaciones = resumen %>% ungroup() %>% 
+  filter(tipo_movimiento == "presentaciones_abogados") %>% 
+  summarise(total = sum(cantidad)) %>% .$total
+
+n_presentaciones =  format(n_presentaciones, big.mark = ".")
+
+promedio <- round(mean(resumen %>% 
+                         group_by(fecha) %>% 
+                         summarise(cantidad = sum(cantidad)) %>% 
+                         .$cantidad))
+
+last_day <- ap_clean$fecha[which.max(ap_clean$fecha)]
+last_day_cantidad_actos <- resumen$cantidad[resumen$fecha == last_day & resumen$tipo_movimiento == "actos_procesales"]
+last_day_cantidad_presentaciones <- resumen$cantidad[resumen$fecha == last_day & resumen$tipo_movimiento == "presentaciones_abogados"]
+
+# Gráfico-----------------------------------------------------------------------
+
+movimientos_g <- resumen %>% 
+  ggplot(aes(x = fecha, y = cantidad, fill = tipo_movimiento)) + 
+  geom_bar(stat="identity") +
+  scale_fill_viridis_d(begin = 0, end = .75) +
+  theme_economist() + 
+  annotate("text", x = ymd("2020-04-17"), y = 13000,  label = str_c('actos: ', n_actproc), colour = "black", size=6) +
+  annotate("text", x = ymd("2020-04-17"), y = 12000,  label = str_c('presentaciones: ', n_presentaciones), colour = "black", size=6) +
+  annotate("text", x = ymd("2020-03-30"), y = 3000,  label = "COVID19", colour = "gray", size=6) +
+  annotate("text", x = ymd("2020-07-18"), y = 3000,  label = "Feria", colour = "gray", size=6) +
+  annotate("text", x = ymd("2021-01-10"), y = 3000,  label = "Feria", colour = "gray", size=6) +
+  #geom_smooth(method = lm, formula = y ~ splines::bs(x, 3), color = "black", size=0.5, se = FALSE) + 
+  scale_x_date(date_labels  = "%d-%b-%y", date_breaks = "1 week" , expand = c(0,0))  +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 18), axis.text.y = element_text(size = 16), 
+        axis.title.x=element_text(size = 20, margin=margin(40,0,0,0)), axis.title.y = element_blank(), 
+        legend.text = element_text(size=20), legend.position = "top", legend.title = element_blank(), 
+        strip.text = element_text(size=20), plot.title = element_text(size=26, margin=margin(0,0,10,0)), 
+        plot.subtitle = element_text(size = 14, margin=margin(0,0,60,0)), panel.grid = element_blank(), 
+        panel.grid.major.y = element_line(colour = "grey", linetype = "dotted"),
+        plot.margin = unit(c(2,2,2,2), "cm"), plot.caption = element_text(colour = "darkgray", size = 16, hjust = 0,  margin=margin(50,0,0,0))) + 
+  labs(title = "Actos procesales y presentaciones digitales en los órganos judiciales de Entre Ríos",
+       subtitle = str_c("Cada barra es un día y la línea horizontal marca el promedio diario de movimientos judiciales:", promedio), 
+       x =  "Lunes de cada semana",  
+       caption = str_c("Las presentaciones se procesan desde 01-04-2020. Consulta ejecutada:", Sys.time(), ".APGE-AInformática, contacto: apge@jusentrerios.gov.ar")) +
+  scale_y_continuous(limit = c(0,15000), breaks = c(0, promedio, 10000, 15000)) +
+  geom_hline(aes(yintercept = promedio), size = 0.5) 
+
+```
+
+```{r, iniciadas_nop_proc, eval = instancia1 & iniciadas & "NoPenal" %in% fuero, message=FALSE, include=FALSE, warning=FALSE, echo=FALSE}
+inic_nop_resultado <- inic_nop(start_date, end_date)
+```
+
+```{r, resoluciones_nop_proc, eval = instancia1 & resoluciones & "NoPenal" %in% fuero, message=FALSE, include=FALSE, warning=FALSE, echo=FALSE}
+res_nop_resultado <- res_nop(start_date = start_date, end_date = end_date)
+```
+
+```{r, iniciadas_p_proc, eval = instancia1 & iniciadas & "Penal" %in% fuero, message=FALSE, include=FALSE, warning=FALSE, echo=FALSE}
+inic_p_resultado <- iniciadas_pen(db_con = DB_PROD(), poblacion = oga,
+                                start_date = start_date, end_date = end_date) %>% .$inic_gtia_pc %>% 
+  mutate(superfuero = 'Penal Garantías')
+```
+
+```{r, resoluciones_p_proc, eval = instancia1 & resoluciones & "Penal" %in% fuero, message=FALSE, include=FALSE, warning=FALSE, echo=FALSE}
+res_p_resultado <- resoluciones_pen(db_con = DB_PROD(), poblacion = oga, start_date = start_date, end_date = end_date,
+                                      desagregacion_mensual = T) %>%  .$gtia_res_pc %>% filter(!is.na(fres)) %>% 
+  left_join(oga %>% select(organismo, circunscripcion), by = c("iep" = "organismo")) %>% 
+  mutate(ac_res = ifelse(tres %in% c("6","10","11"), "actos_conclusivos", "resoluciones")) %>% 
+  rename(fecha_resolucion = fres)
+```
+
+```{python}
+import pandas
+print(fallos[3][-2])
+
+```
+
+<!-- GRAFICOS --------------------------------------------------------------->
+
+\blandscape
+
+```{r, logo, echo=FALSE, out.width = '10%', fig.align= "right"}
+knitr::include_graphics("logo.png")
+```
+
+```{r, movimientos_g, eval = movimientos, message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center"}
+movimientos_g
+```
+
+```{r, iniciadas_nop_g, eval = instancia1 & iniciadas & "NoPenal" %in% fuero,message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center"}
+inic_nop_resultado %>%  
+  serietemp(vartiempo = finicio, agrupador = "superfuero", intervalo = intervalo, geom = geom , sma = sma, etiquetas = etiquetas, 
+                titulo = "Evolución de las causas iniciadas en toda la provincia") %>% .$grafico
+```
+
+```{r, iniciadas_nop_xmat, eval = instancia1 & iniciadas & "NoPenal" %in% fuero,message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center"}
+inic_nop_resultado %>%  
+  serietemp(vartiempo = finicio, agrupador = agrupador, intervalo = intervalo, geom = geom , sma = sma, etiquetas = etiquetas, 
+                titulo = "Evolución de las causas iniciadas en toda la provincia en materias no penales") %>% .$grafico
+```
+
+```{r, resoluciones_nop_g, eval = instancia1 & resoluciones & "NoPenal" %in% fuero,message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center"}
+# inconsistencia detectada con el informe de seguimiento basado en datos procesados y no en primaria consolidada: Ver
+res_nop_resultado %>% 
+  serietemp(vartiempo = fecha_resolucion, agrupador = "as", intervalo = intervalo, geom = geom , sma = sma, etiquetas = etiquetas, 
+              titulo = "Resoluciones dictadas en 1ª instancia en toda la provincia en materias no penales ") %>% .$grafico
+```
+
+```{r, resolucionesxmat_nop_g, eval = instancia1 & resoluciones & "NoPenal" %in% fuero,message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center"}
+res_nop_resultado %>% 
+  serietemp(vartiempo = fecha_resolucion, agrupador = agrupador, intervalo = intervalo, geom = geom , sma = sma, etiquetas = etiquetas, 
+              titulo = "Resoluciones dictadas en 1ª instancia en toda la provincia en materias no penales") %>% .$grafico
+```
+
+```{r, iniciadas_p_g, eval = instancia1 & iniciadas & "Penal" %in% fuero,message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center" }
+inic_p_resultado %>%
+  serietemp(vartiempo = finicio, agrupador = "superfuero", intervalo = intervalo, geom = geom , sma = sma, etiquetas = etiquetas, 
+                titulo = "Evolución de las causas iniciadas en toda la provincia en Garantías Penal") %>% .$grafico
+```
+
+```{r, iniciadasxcirc_p_g, eval = instancia1 & iniciadas & "Penal" %in% fuero, message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center" }
+inic_p_resultado %>%
+  serietemp(vartiempo = finicio, agrupador = "circunscripcion", intervalo = intervalo, geom = geom , sma = sma, etiquetas = etiquetas, 
+                titulo = "Evolución de las causas iniciadas en toda la provincia en Garantías Penal") %>% .$grafico
+  
+  
+```
+
+```{r, resoluciones_p_g, eval = instancia1 & resoluciones & "Penal" %in% fuero,message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center" }
+res_p_resultado %>% 
+   serietemp(vartiempo = fecha_resolucion, agrupador = "ac_res", intervalo = intervalo, geom = geom , sma = sma, etiquetas = etiquetas, 
+              titulo = "Resoluciones dictadas en toda la provincia en Garantías Penal ") %>% .$grafico
+```
+
+```{r, resolucionesxcirc_p_g, eval = instancia1 & resoluciones & "Penal" %in% fuero,message=FALSE, warning=FALSE, echo=FALSE, fig.height = 12, fig.width = 18, fig.align = "center" }
+res_p_resultado %>% 
+   serietemp(vartiempo = fecha_resolucion, agrupador = "circunscripcion", intervalo = intervalo, geom = geom , sma = sma, etiquetas = etiquetas, 
+              titulo = "Resoluciones dictadas en toda la provincia en Garantías Penal ") %>% .$grafico
+```
+
+\elandscape

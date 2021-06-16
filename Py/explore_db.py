@@ -139,3 +139,5 @@ postgreSQL_select_Query = "select * from public.jur_fallos"
 cursor.execute(postgreSQL_select_Query)
 fallos = cursor.fetchmany(10)
 fallos[1]
+
+print_tree()

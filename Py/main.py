@@ -1,7 +1,3 @@
-# Instalar python y ambiente de trabajo:
-# https://support.rstudio.com/hc/en-us/articles/360023654474-Installing-and-Configuring-Python-with-RStudio
-# https://rstudio.github.io/reticulate/articles/python_packages.html
-
 # Activar ambiente
 # use_virtualenv("pythonenv")
 
@@ -25,7 +21,7 @@ params = config()
 # connect to the PostgreSQL server
 connection = psycopg2.connect(**params)
 # create a cursor
-cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+#cursor = connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 
