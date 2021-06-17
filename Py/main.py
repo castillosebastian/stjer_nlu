@@ -16,6 +16,7 @@ import matplotlib
 import os
 import sklearn
 import psycopg2
+import plotly
 
 params = config()
 # connect to the PostgreSQL server

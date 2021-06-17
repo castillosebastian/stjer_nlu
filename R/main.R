@@ -1,4 +1,5 @@
 library(reticulate)
+library(plotly)
 #use_virtualenv('/home/scastillo/stjer_nlu/pythonenv')
 
 # check config

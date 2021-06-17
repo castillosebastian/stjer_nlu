@@ -1,0 +1,29 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r}
+source('~/stjer_nlu/R/main.R')
+reticulate::source_python('~/stjer_nlu/Py/main.py')
+```
+
+```{python}
+cursor = connection.cursor()
+postgreSQL_select_Query = "select * from public.jur_fallos"
+cursor.execute(postgreSQL_select_Query)
+fallos = cursor.fetchall()
+```
+
+
+```{python}
+print(fallos[1][-2])
+```
+
+
+```{r}
+#lineplot (the lines do not have to be linear, will connect points in order they are written)
+plot_ly(x = c(1, 2, 3),   #choose x variable (here, the x variable is a created in-line as a vector <1,2,3>)
+        y = c(5, 6, 7),   #choose y variable (same situation as with x variable)
+        type = "scatter", #specifies the chart is a scatter plot
+        mode = "lines")   #Makes the chart a scatterplot
+```
